@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JD Link Sender</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      background: #ffffff;
+      color: #111827;
+      width: 490px;
+      min-height: 430px;
+      overflow: hidden;
+    }
+
+    /* ── Layout principale ─────────────────────────────────── */
+
+    #main-content {
+      padding: 20px 22px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .header-icon {
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: -6px;
+    }
+
+    /* ── Lista link ────────────────────────────────────────── */
+
+    .link-list {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      max-height: 175px;
+      overflow-y: auto;
+    }
+
+    .link-item {
+      padding: 7px 11px;
+      font-family: 'Cascadia Code', 'Consolas', 'Menlo', monospace;
+      font-size: 11px;
+      color: #374151;
+      border-bottom: 1px solid #f3f4f6;
+      word-break: break-all;
+      line-height: 1.4;
+    }
+
+    .link-item:last-child { border-bottom: none; }
+
+    /* ── Campo pacchetto ───────────────────────────────────── */
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .field label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    .field label .hint {
+      font-weight: 400;
+      color: #9ca3af;
+    }
+
+    .field input[type="text"] {
+      padding: 7px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 5px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      color: #111827;
+    }
+
+    .field input[type="text"]:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+    }
+
+    /* ── Pulsanti ──────────────────────────────────────────── */
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      padding-top: 2px;
+    }
+
+    button {
+      padding: 8px 18px;
+      border-radius: 5px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    .btn-cancel {
+      background: #f3f4f6;
+      border-color: #d1d5db;
+      color: #374151;
+    }
+    .btn-cancel:hover { background: #e5e7eb; }
+
+    .btn-send {
+      background: #2563eb;
+      color: #ffffff;
+    }
+    .btn-send:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-send:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    /* ── Box errore "zero link" ────────────────────────────── */
+
+    .error-box {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      padding: 13px 14px;
+      color: #b91c1c;
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+
+    /* ── Overlay stato (invio / successo / errore) ─────────── */
+
+    #status-overlay {
+      display: none;              /* nascosto di default */
+      position: fixed;
+      inset: 0;
+      background: #ffffff;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 30px 28px;
+      text-align: center;
+    }
+
+    body.overlay-active #main-content  { display: none; }
+    body.overlay-active #status-overlay { display: flex; }
+
+    .status-icon {
+      font-size: 38px;
+      line-height: 1;
+    }
+
+    .status-message {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .status-sub {
+      font-size: 12.5px;
+      color: #6b7280;
+      line-height: 1.5;
+      max-width: 340px;
+    }
+
+    /* Colori per stato successo */
+    .overlay-success .status-icon    { color: #16a34a; }
+    .overlay-success .status-message { color: #15803d; }
+
+    /* Colori per stato errore */
+    .overlay-error .status-icon    { color: #dc2626; }
+    .overlay-error .status-message { color: #b91c1c; }
+
+    /* Pulsanti nell'overlay errore */
+    .overlay-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    /* ── Spinner ───────────────────────────────────────────── */
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #e5e7eb;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <!-- ── Vista principale ── -->
+  <div id="main-content">
+
+    <div class="header">
+      <span class="header-icon">⬇</span>
+      <h1>Invia a JDownloader</h1>
+    </div>
+
+    <p class="subtitle" id="subtitle">Caricamento…</p>
+
+    <!-- Popolato dinamicamente da confirm.js -->
+    <div id="link-container"></div>
+
+    <div class="field">
+      <label for="package-name">
+        Nome pacchetto <span class="hint">(opzionale)</span>
+      </label>
+      <input type="text" id="package-name" placeholder="es. Film 2024" autocomplete="off">
+    </div>
+
+    <div class="actions">
+      <button class="btn-cancel" id="btn-cancel">Annulla</button>
+      <button class="btn-send"   id="btn-send">Invia →</button>
+    </div>
+
+  </div>
+
+  <!-- ── Overlay stato ── -->
+  <div id="status-overlay">
+    <div id="status-icon-wrap" class="status-icon"></div>
+    <div class="status-message" id="status-message"></div>
+    <div class="status-sub"     id="status-sub"></div>
+    <div class="overlay-actions" id="overlay-actions"></div>
+  </div>
+
+  <script type="module" src="confirm.js"></script>
+</body>
+</html>
