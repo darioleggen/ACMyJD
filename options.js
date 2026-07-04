@@ -1,23 +1,21 @@
 /**
  * Logica della pagina Opzioni.
- * Legge/salva host e porta in chrome.storage.sync e permette di verificare
- * la connessione a JDownloader tramite l'endpoint CNL2 /jdcheck.js.
+ * Legge/salva l'URL base di JDownloader in chrome.storage.sync e permette
+ * di verificare la connessione tramite l'endpoint CNL2 /jdcheck.js.
  */
 
-import { DEFAULT_CONFIG, REQUEST_TIMEOUT_MS } from './config.js';
+import { getJdConfig, REQUEST_TIMEOUT_MS } from './config.js';
 
-const elHost   = document.getElementById('host');
-const elPort   = document.getElementById('port');
-const elSave   = document.getElementById('btn-save');
-const elTest   = document.getElementById('btn-test');
-const elStatus = document.getElementById('status');
+const elBaseUrl = document.getElementById('base-url');
+const elSave    = document.getElementById('btn-save');
+const elTest    = document.getElementById('btn-test');
+const elStatus  = document.getElementById('status');
 
-// ── Caricamento valori correnti ───────────────────────────────────────────────
+// ── Caricamento valore corrente ───────────────────────────────────────────────
 
 async function init() {
-  const stored = await chrome.storage.sync.get(DEFAULT_CONFIG);
-  elHost.value = stored.host;
-  elPort.value = stored.port;
+  const config = await getJdConfig();
+  elBaseUrl.value = config.baseUrl;
 }
 
 init();
@@ -25,46 +23,58 @@ init();
 // ── Validazione input ─────────────────────────────────────────────────────────
 
 /**
- * Legge e valida i campi del form.
- * @returns {{host: string, port: number}|null}  null se non validi
+ * Legge e valida il campo URL.
+ * @returns {string|null}  URL normalizzato (senza slash finale), o null se non valido
  */
 function readForm() {
-  const host = elHost.value.trim();
-  const port = parseInt(elPort.value, 10);
+  const raw = elBaseUrl.value.trim().replace(/\/+$/, '');
 
-  if (!host) {
-    showStatus('Inserisci un indirizzo IP o hostname.', false);
+  if (!raw) {
+    showStatus('Inserisci l\'URL di JDownloader.', false);
     return null;
   }
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    showStatus('Porta non valida (1–65535).', false);
+
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    showStatus('URL non valido. Esempio: http://192.168.1.15:9666', false);
     return null;
   }
-  return { host, port };
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    showStatus('L\'URL deve iniziare con http:// o https://', false);
+    return null;
+  }
+
+  return raw;
 }
 
 // ── Salvataggio ───────────────────────────────────────────────────────────────
 
 elSave.addEventListener('click', async () => {
-  const values = readForm();
-  if (!values) return;
+  const baseUrl = readForm();
+  if (!baseUrl) return;
 
-  await chrome.storage.sync.set(values);
+  await chrome.storage.sync.set({ baseUrl });
+  // Rimuove le chiavi del vecchio formato host/porta per completare la migrazione
+  await chrome.storage.sync.remove(['host', 'port']);
+
   showStatus('Impostazioni salvate ✓', true);
 });
 
 // ── Prova connessione ─────────────────────────────────────────────────────────
 
 elTest.addEventListener('click', async () => {
-  const values = readForm();
-  if (!values) return;
+  const baseUrl = readForm();
+  if (!baseUrl) return;
 
   showStatus('Connessione in corso…', true);
 
   try {
     // /jdcheck.js è l'endpoint di ping CNL2: risponde con un piccolo JS
     // contenente la stringa "jdownloader" se JD è attivo
-    const res = await fetch(`http://${values.host}:${values.port}/jdcheck.js`, {
+    const res = await fetch(`${baseUrl}/jdcheck.js`, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     const text = await res.text();
