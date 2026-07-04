@@ -103,6 +103,7 @@ async function handleMultipleLinksResolve(urls) {
   /** @type {Map<string, string[]>} hostname → links */
   const hostnameMap = new Map();
   const allBlocks   = [];
+  let   packageName = ''; // primo nome pacchetto non vuoto tra i container risolti
 
   await Promise.all(urls.map(async (url) => {
     let html;
@@ -125,8 +126,9 @@ async function handleMultipleLinksResolve(urls) {
       return;
     }
 
-    const { linkGroups } = scanPlainLinksFromHtml(html);
+    const { linkGroups, packageName: pkg } = scanPlainLinksFromHtml(html);
     if (linkGroups.length > 0) {
+      if (pkg && !packageName) packageName = pkg;
       for (const { hostname, links } of linkGroups) {
         if (!hostnameMap.has(hostname)) hostnameMap.set(hostname, []);
         hostnameMap.get(hostname).push(...links);
@@ -144,7 +146,7 @@ async function handleMultipleLinksResolve(urls) {
   }
 
   const linkGroups = Array.from(hostnameMap, ([hostname, links]) => ({ hostname, links }));
-  await routeGroupsToPopup(linkGroups, '');
+  await routeGroupsToPopup(linkGroups, packageName);
 }
 
 /** @param {Map<string,string[]>} map @param {string} url */
