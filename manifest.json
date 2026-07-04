@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "JD Link Sender",
-  "version": "1.0",
-  "description": "Invia link a JDownloader 2 via ClickNLoad2 (CNL2) — sostituto minimale di MyJDownloader",
+  "version": "1.1",
+  "description": "Invia link e container crittografati a JDownloader 2 via ClickNLoad2 (CNL2) — sostituto minimale di MyJDownloader",
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -13,6 +13,14 @@
     "storage"
   ],
   "host_permissions": [
-    "http://192.168.1.15:9666/*"
+    "http://192.168.1.15:9666/*",
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-cnl-scanner.js"],
+      "run_at": "document_idle"
+    }
   ]
 }

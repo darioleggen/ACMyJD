@@ -1,19 +1,18 @@
 /**
  * Modulo di comunicazione con JDownloader via interfaccia CNL2 (ClickNLoad2).
- *
- * Fase 2: aggiungere qui sendCryptedLinks(jk, crypted, passwords)
- * che chiama POST /flash/addcrypted2 con i parametri cifrati degli hoster.
+ * Espone due funzioni:
+ *   - sendPlainLinks()   — link URL normali → GET /flash/add
+ *   - sendCryptedLinks() — container cifrati → POST /flash/addcrypted2
  */
 
 import { JD_CONFIG } from './config.js';
 
 /**
  * Invia uno o più URL a JDownloader tramite l'endpoint CNL2 plain (/flash/add).
- * La richiesta è un GET con i parametri nella query string.
  *
  * @param {string[]} urls        - Array di URL da aggiungere alla coda
  * @param {string}  packageName  - Nome del pacchetto JD (stringa vuota = JD sceglie)
- * @returns {Promise<void>}      - Risolve se JD accetta; rigetta con Error in caso di problemi
+ * @returns {Promise<void>}
  */
 export async function sendPlainLinks(urls, packageName = '') {
   if (urls.length === 0) {
@@ -31,12 +30,53 @@ export async function sendPlainLinks(urls, packageName = '') {
     `&package=${encodedPackage}` +
     `&source=${encodedSource}`;
 
-  // AbortSignal.timeout() disponibile da Chrome 103+
   const response = await fetch(endpoint, {
     signal: AbortSignal.timeout(JD_CONFIG.requestTimeoutMs),
   });
 
   if (!response.ok) {
     throw new Error(`Il server ha risposto con HTTP ${response.status} ${response.statusText}`);
+  }
+}
+
+/**
+ * Invia uno o più blocchi CNL2 crittografati a JDownloader via POST /flash/addcrypted2.
+ * Ogni blocco viene spedito in una richiesta separata (JD gestisce un blocco per volta).
+ *
+ * Il parametro "source" è impostato al valore fisso JD_CONFIG.cnl2Source per evitare
+ * il popup di conferma "External request from X" di JDownloader.
+ *
+ * @param {{crypted: string, jk: string, passwords?: string}[]} blocks
+ * @returns {Promise<void>}
+ */
+export async function sendCryptedLinks(blocks) {
+  if (blocks.length === 0) {
+    throw new Error('Nessun container da inviare.');
+  }
+
+  const endpoint = `${JD_CONFIG.baseUrl}/flash/addcrypted2`;
+
+  for (const block of blocks) {
+    const body = new URLSearchParams({
+      crypted: block.crypted,
+      jk:      block.jk,
+      source:  JD_CONFIG.cnl2Source,
+    });
+
+    // Il campo passwords è opzionale; lo aggiungiamo solo se presente
+    if (block.passwords) {
+      body.set('passwords', block.passwords);
+    }
+
+    const response = await fetch(endpoint, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body:    body.toString(),
+      signal:  AbortSignal.timeout(JD_CONFIG.requestTimeoutMs),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Il server ha risposto con HTTP ${response.status} ${response.statusText}`);
+    }
   }
 }
