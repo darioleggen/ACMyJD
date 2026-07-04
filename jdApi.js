@@ -3,9 +3,12 @@
  * Espone due funzioni:
  *   - sendPlainLinks()   — link URL normali → GET /flash/add
  *   - sendCryptedLinks() — container cifrati → POST /flash/addcrypted2
+ *
+ * L'indirizzo di JDownloader viene letto da chrome.storage.sync a ogni chiamata,
+ * così le modifiche fatte nella pagina Opzioni hanno effetto immediato.
  */
 
-import { JD_CONFIG } from './config.js';
+import { getJdConfig, REQUEST_TIMEOUT_MS, CNL2_SOURCE } from './config.js';
 
 /**
  * Invia uno o più URL a JDownloader tramite l'endpoint CNL2 plain (/flash/add).
@@ -19,19 +22,21 @@ export async function sendPlainLinks(urls, packageName = '') {
     throw new Error('Nessun URL da inviare.');
   }
 
+  const config = await getJdConfig();
+
   // CNL2 vuole gli URL separati da CRLF come valore del parametro "urls"
   const encodedUrls    = encodeURIComponent(urls.join('\r\n'));
   const encodedPackage = encodeURIComponent(packageName);
-  const encodedSource  = encodeURIComponent(JD_CONFIG.cnl2Source);
+  const encodedSource  = encodeURIComponent(CNL2_SOURCE);
 
   const endpoint =
-    `${JD_CONFIG.baseUrl}/flash/add` +
+    `${config.baseUrl}/flash/add` +
     `?urls=${encodedUrls}` +
     `&package=${encodedPackage}` +
     `&source=${encodedSource}`;
 
   const response = await fetch(endpoint, {
-    signal: AbortSignal.timeout(JD_CONFIG.requestTimeoutMs),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -41,10 +46,7 @@ export async function sendPlainLinks(urls, packageName = '') {
 
 /**
  * Invia uno o più blocchi CNL2 crittografati a JDownloader via POST /flash/addcrypted2.
- * Ogni blocco viene spedito in una richiesta separata (JD gestisce un blocco per volta).
- *
- * Il parametro "source" è impostato al valore fisso JD_CONFIG.cnl2Source per evitare
- * il popup di conferma "External request from X" di JDownloader.
+ * Ogni blocco viene spedito in una richiesta separata.
  *
  * @param {{crypted: string, jk: string, passwords?: string}[]} blocks
  * @returns {Promise<void>}
@@ -54,16 +56,16 @@ export async function sendCryptedLinks(blocks) {
     throw new Error('Nessun container da inviare.');
   }
 
-  const endpoint = `${JD_CONFIG.baseUrl}/flash/addcrypted2`;
+  const config   = await getJdConfig();
+  const endpoint = `${config.baseUrl}/flash/addcrypted2`;
 
   for (const block of blocks) {
     const body = new URLSearchParams({
       crypted: block.crypted,
       jk:      block.jk,
-      source:  JD_CONFIG.cnl2Source,
+      source:  CNL2_SOURCE,
     });
 
-    // Il campo passwords è opzionale; lo aggiungiamo solo se presente
     if (block.passwords) {
       body.set('passwords', block.passwords);
     }
@@ -72,7 +74,7 @@ export async function sendCryptedLinks(blocks) {
       method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body:    body.toString(),
-      signal:  AbortSignal.timeout(JD_CONFIG.requestTimeoutMs),
+      signal:  AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
     if (!response.ok) {

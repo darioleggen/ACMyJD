@@ -13,9 +13,12 @@
     "storage"
   ],
   "host_permissions": [
-    "http://192.168.1.15:9666/*",
     "<all_urls>"
   ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

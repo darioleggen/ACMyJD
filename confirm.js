@@ -295,7 +295,7 @@ function friendlyError(err) {
     return 'Timeout: JDownloader non ha risposto entro il tempo limite.\nVerifica che il container Docker sia avviato.';
   }
   if (err.name === 'TypeError') {
-    return `JDownloader non è raggiungibile all'indirizzo configurato.\nVerifica che il container sia avviato e che la porta 9666 sia aperta.`;
+    return `JDownloader non è raggiungibile all'indirizzo configurato.\nVerifica che il container sia avviato e che l'indirizzo nelle Opzioni dell'estensione sia corretto.`;
   }
   return err.message ?? 'Errore sconosciuto.';
 }

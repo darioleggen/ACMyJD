@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JD Link Sender — Opzioni</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      background: #ffffff;
+      color: #111827;
+      min-width: 380px;
+      padding: 20px 22px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 14px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .header-icon { font-size: 20px; line-height: 1; }
+
+    .header h1 {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 14px;
+    }
+
+    .field label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    .field .hint {
+      font-weight: 400;
+      color: #9ca3af;
+      font-size: 11.5px;
+    }
+
+    .field input {
+      padding: 7px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 5px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .field input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 4px;
+    }
+
+    button {
+      padding: 8px 18px;
+      border-radius: 5px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 0.15s;
+    }
+
+    .btn-save {
+      background: #2563eb;
+      color: #ffffff;
+    }
+    .btn-save:hover { background: #1d4ed8; }
+
+    .btn-test {
+      background: #f3f4f6;
+      border-color: #d1d5db;
+      color: #374151;
+    }
+    .btn-test:hover { background: #e5e7eb; }
+
+    /* Messaggio di stato accanto ai pulsanti */
+    #status {
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+    #status.ok   { color: #15803d; }
+    #status.err  { color: #b91c1c; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <span class="header-icon">⚙</span>
+    <h1>JD Link Sender — Opzioni</h1>
+  </div>
+
+  <div class="field">
+    <label for="host">
+      Indirizzo IP / hostname del NAS
+      <span class="hint">(dove gira JDownloader)</span>
+    </label>
+    <input type="text" id="host" placeholder="es. 192.168.1.15" autocomplete="off">
+  </div>
+
+  <div class="field">
+    <label for="port">
+      Porta CNL2
+      <span class="hint">(default 9666)</span>
+    </label>
+    <input type="number" id="port" min="1" max="65535" placeholder="9666">
+  </div>
+
+  <div class="actions">
+    <button class="btn-save" id="btn-save">Salva</button>
+    <button class="btn-test" id="btn-test">Prova connessione</button>
+    <span id="status"></span>
+  </div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>
