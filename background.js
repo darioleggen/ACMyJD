@@ -269,7 +269,7 @@ function scanPlainLinksFromHtml(html) {
     if (lines.length >= 2) {
       return {
         linkGroups:  groupByHostname(lines),
-        packageName: extractMetaContent(html, 'lficrypt-package'),
+        packageName: extractMetaContent(html, 'lficrypt-package') || extractPageTitle(html),
       };
     }
   }
@@ -316,6 +316,20 @@ function extractMetaContent(html, name) {
     }
   }
   return '';
+}
+
+/**
+ * Estrae il nome del pacchetto dal tag <title> come fallback.
+ * "House Party | LFiCrypt" → "House Party"
+ * Rimuove qualsiasi suffisso dopo " | ", " - ", " – " o " — ".
+ *
+ * @param {string} html
+ * @returns {string}
+ */
+function extractPageTitle(html) {
+  const m = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  if (!m) return '';
+  return m[1].replace(/\s*[|–—]\s*.*$/, '').trim();
 }
 
 function decodeHtmlEntities(str) {
