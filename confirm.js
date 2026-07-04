@@ -1,8 +1,9 @@
 /**
  * Logica del popup di conferma/esito.
- * Supporta due modalità distinte, determinate dai dati in session storage:
- *   - 'links'   (Fase 1): link URL plain → chiama sendPlainLinks()
- *   - 'crypted' (Fase 2): container CNL2 crittografati → chiama sendCryptedLinks()
+ * Supporta tre modalità, determinate dai dati in session storage:
+ *   - 'links'   (Fase 1): link URL plain → sendPlainLinks()
+ *   - 'crypted' (Fase 2): container CNL2 crittografati → sendCryptedLinks()
+ *   - 'grouped' (Fase 2): link raggruppati per hoster → sendPlainLinks() sui selezionati
  */
 
 import { sendPlainLinks, sendCryptedLinks } from './jdApi.js';
@@ -22,7 +23,7 @@ const elOverActions   = document.getElementById('overlay-actions');
 
 // ── Stato ────────────────────────────────────────────────────────────────────
 
-/** @type {'links'|'crypted'} */
+/** @type {'links'|'crypted'|'grouped'} */
 let mode = 'links';
 
 /** @type {string[]} */
@@ -31,31 +32,36 @@ let pendingLinks = [];
 /** @type {{crypted:string, jk:string, passwords:string}[]} */
 let pendingCryptedBlocks = [];
 
+/** @type {{hostname:string, links:string[]}[]} */
+let pendingLinkGroups = [];
+
 // ── Inizializzazione ─────────────────────────────────────────────────────────
 
 async function init() {
   const data = await chrome.storage.session.get([
-    'pendingLinks', 'pendingCryptedBlocks', 'pendingPackageName',
+    'pendingLinks', 'pendingCryptedBlocks', 'pendingLinkGroups', 'pendingPackageName',
   ]);
 
   await chrome.storage.session.remove([
-    'pendingLinks', 'pendingCryptedBlocks', 'pendingPackageName',
+    'pendingLinks', 'pendingCryptedBlocks', 'pendingLinkGroups', 'pendingPackageName',
   ]);
 
-  // La presenza di 'pendingCryptedBlocks' (anche vuoto) indica la modalità Fase 2
-  if (data.pendingCryptedBlocks !== undefined) {
+  // Priorità di lettura: grouped > crypted > links
+  if (data.pendingLinkGroups !== undefined) {
+    mode = 'grouped';
+    pendingLinkGroups = data.pendingLinkGroups ?? [];
+    if (data.pendingPackageName) elPackageName.value = data.pendingPackageName;
+    renderGroupedList();
+
+  } else if (data.pendingCryptedBlocks !== undefined) {
     mode = 'crypted';
     pendingCryptedBlocks = data.pendingCryptedBlocks ?? [];
     renderCryptedList();
+
   } else {
     mode = 'links';
     pendingLinks = data.pendingLinks ?? [];
-
-    // Pre-compila il nome pacchetto se il background lo ha estratto dalla pagina
-    if (data.pendingPackageName) {
-      elPackageName.value = data.pendingPackageName;
-    }
-
+    if (data.pendingPackageName) elPackageName.value = data.pendingPackageName;
     renderLinkList();
   }
 }
@@ -85,10 +91,9 @@ function renderLinkList() {
   elLinkContainer.innerHTML = `<div class="link-list">${items}</div>`;
 }
 
-// ── Rendering — Fase 2 (container crittografati) ──────────────────────────────
+// ── Rendering — Fase 2 container crittografati ────────────────────────────────
 
 function renderCryptedList() {
-  // Il campo "pacchetto" non è rilevante per /flash/addcrypted2
   elPackageField.style.display = 'none';
 
   if (pendingCryptedBlocks.length === 0) {
@@ -112,7 +117,6 @@ function renderCryptedList() {
     return;
   }
 
-  // Più blocchi: lista con checkbox (tutti selezionati di default)
   const n = pendingCryptedBlocks.length;
   elSubtitle.textContent = `${n} container trovati — seleziona quali inviare:`;
 
@@ -124,10 +128,41 @@ function renderCryptedList() {
   ).join('');
   elLinkContainer.innerHTML = `<div class="crypted-list">${items}</div>`;
 
-  // Disabilita "Invia" se l'utente deseleziona tutto
   elLinkContainer.addEventListener('change', () => {
-    const anyChecked = elLinkContainer.querySelector('.crypted-check:checked') !== null;
-    elBtnSend.disabled = !anyChecked;
+    elBtnSend.disabled = !elLinkContainer.querySelector('.crypted-check:checked');
+  });
+}
+
+// ── Rendering — Fase 2 link per hoster ───────────────────────────────────────
+
+function renderGroupedList() {
+  if (pendingLinkGroups.length === 0) {
+    elSubtitle.textContent = 'Nessun link trovato.';
+    elLinkContainer.innerHTML =
+      `<div class="error-box">
+         Nessun link trovato nel container.<br>
+         La pagina non contiene link riconoscibili.
+       </div>`;
+    elBtnSend.disabled = true;
+    return;
+  }
+
+  const totalLinks  = pendingLinkGroups.reduce((s, g) => s + g.links.length, 0);
+  const n           = pendingLinkGroups.length;
+  elSubtitle.textContent =
+    `${n} hoster disponibili (${totalLinks} link totali) — seleziona quali inviare:`;
+
+  const items = pendingLinkGroups.map((group, i) =>
+    `<label class="crypted-item">
+       <input type="checkbox" class="group-check" data-index="${i}" checked>
+       <span>${escapeHtml(group.hostname)}</span>
+       <span class="group-count">${group.links.length} link</span>
+     </label>`
+  ).join('');
+  elLinkContainer.innerHTML = `<div class="crypted-list">${items}</div>`;
+
+  elLinkContainer.addEventListener('change', () => {
+    elBtnSend.disabled = !elLinkContainer.querySelector('.group-check:checked');
   });
 }
 
@@ -136,36 +171,30 @@ function renderCryptedList() {
 elBtnCancel.addEventListener('click', () => window.close());
 
 elBtnSend.addEventListener('click', async () => {
-  if (mode === 'crypted') {
-    await handleCryptedSend();
-  } else {
-    await handlePlainSend();
-  }
+  if      (mode === 'grouped')  await handleGroupedSend();
+  else if (mode === 'crypted')  await handleCryptedSend();
+  else                          await handlePlainSend();
 });
 
-// ── Handler invio — Fase 1 ───────────────────────────────────────────────────
+// ── Handler invio — link plain ────────────────────────────────────────────────
 
 async function handlePlainSend() {
   if (pendingLinks.length === 0) return;
 
-  const packageName = elPackageName.value.trim();
   setOverlay('sending');
-
   try {
-    await sendPlainLinks(pendingLinks, packageName);
-
+    await sendPlainLinks(pendingLinks, elPackageName.value.trim());
     const n = pendingLinks.length;
     setOverlay('success', '✓', 'Link inviati con successo!',
       `${n} link ${n === 1 ? 'aggiunto' : 'aggiunti'} alla coda di JDownloader.`
     );
     setTimeout(() => window.close(), 2500);
-
   } catch (err) {
     showErrorOverlay(err);
   }
 }
 
-// ── Handler invio — Fase 2 ───────────────────────────────────────────────────
+// ── Handler invio — container CNL2 ───────────────────────────────────────────
 
 async function handleCryptedSend() {
   let selectedBlocks;
@@ -182,16 +211,36 @@ async function handleCryptedSend() {
   if (selectedBlocks.length === 0) return;
 
   setOverlay('sending');
-
   try {
     await sendCryptedLinks(selectedBlocks);
-
     const n = selectedBlocks.length;
     setOverlay('success', '✓', 'Container inviati!',
       `${n} container ${n === 1 ? 'inviato' : 'inviati'} alla coda di JDownloader.`
     );
     setTimeout(() => window.close(), 2500);
+  } catch (err) {
+    showErrorOverlay(err);
+  }
+}
 
+// ── Handler invio — link per hoster ──────────────────────────────────────────
+
+async function handleGroupedSend() {
+  const checks        = document.querySelectorAll('.group-check:checked');
+  const selectedLinks = Array.from(checks).flatMap(cb =>
+    pendingLinkGroups[parseInt(cb.dataset.index, 10)].links
+  );
+
+  if (selectedLinks.length === 0) return;
+
+  setOverlay('sending');
+  try {
+    await sendPlainLinks(selectedLinks, elPackageName.value.trim());
+    const n = selectedLinks.length;
+    setOverlay('success', '✓', 'Link inviati con successo!',
+      `${n} link ${n === 1 ? 'aggiunto' : 'aggiunti'} alla coda di JDownloader.`
+    );
+    setTimeout(() => window.close(), 2500);
   } catch (err) {
     showErrorOverlay(err);
   }
@@ -199,19 +248,13 @@ async function handleCryptedSend() {
 
 // ── Helper: overlay stato ────────────────────────────────────────────────────
 
-/**
- * @param {'sending'|'success'|'error'} type
- * @param {string} [icon]
- * @param {string} [message]
- * @param {string} [sub]
- */
 function setOverlay(type, icon = '', message = '', sub = '') {
   elOverlay.className = '';
 
   if (type === 'sending') {
-    elIconWrap.innerHTML   = '<div class="spinner"></div>';
-    elMessage.textContent  = 'Invio in corso…';
-    elSub.textContent      = '';
+    elIconWrap.innerHTML  = '<div class="spinner"></div>';
+    elMessage.textContent = 'Invio in corso…';
+    elSub.textContent     = '';
   } else {
     elIconWrap.textContent = icon;
     elMessage.textContent  = message;

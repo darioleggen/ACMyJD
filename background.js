@@ -1,29 +1,23 @@
 /**
  * Service worker principale (MV3).
- * Gestisce le voci del menu contestuale e apre il popup di conferma.
+ * Unica voce di menu "Invia a JDownloader" per tutti i contesti:
+ *   - LINK      → fetch silenzioso della pagina; se è un container estrae i link reali
+ *   - SELECTION → risolve ogni URL nel testo selezionato con la stessa logica
+ *   - PAGE      → scansiona il DOM della tab corrente via content script
  *
- * Voce "Risolvi container e invia a JDownloader" (contexts: page + link):
- *   - clic su LINK  → scarica la pagina linkata via fetch(), la analizza con regex
- *                     ed estrae link reali senza usare DOMParser (non affidabile nei SW)
- *   - clic su PAGINA → scansiona il DOM della tab corrente via content script
+ * I link estratti vengono raggruppati per hostname: se ci sono più hoster il
+ * popup mostra una checkbox per hoster così l'utente può scegliere quali inviare.
  */
 
 import { extractLinks } from './linkUtils.js';
 
 const POPUP_W = 490;
 const POPUP_H = 430;
-
-// Timeout fetch delle pagine container (ms)
 const CONTAINER_FETCH_TIMEOUT = 12_000;
 
-// ── Inizializzazione menu contestuale ─────────────────────────────────────────
+// ── Menu contestuale ──────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(() => {
-  // Unica voce per tutti i contesti — il comportamento si adatta automaticamente:
-  //   - su LINK      → scarica la pagina linkata; se è un container estrae i link reali,
-  //                    altrimenti invia l'URL direttamente
-  //   - su SELEZIONE → risolve ogni URL trovato nel testo selezionato con la stessa logica
-  //   - su PAGINA    → scansiona il DOM della pagina corrente tramite content script
   chrome.contextMenus.create({
     id: 'jd-send',
     title: 'Invia a JDownloader',
@@ -37,13 +31,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== 'jd-send') return;
 
   if (info.linkUrl) {
-    // Clic su link <a href>: tenta la risoluzione container; fallback all'URL originale
     await handleLinkResolve(info.linkUrl);
     return;
   }
 
   if (info.selectionText) {
-    // Clic su testo selezionato: estrae gli URL e risolve ciascuno
     const urls = extractLinks(info.selectionText);
     if (urls.length === 0) {
       await openCryptedPopup([]); // nessun URL riconoscibile nella selezione
@@ -53,17 +45,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
-  // Clic su area vuota della pagina: scansiona il DOM corrente via content script
+  // Clic su area vuota: scansiona il DOM della tab corrente
   const { blocks, plainLinks, packageName } = await scanCurrentPage(tab.id);
-  await routeToPopup(blocks, plainLinks, packageName, null);
+  await routeToPopup(blocks, plainLinks, packageName);
 });
 
-// ── Risoluzione URL remoto ────────────────────────────────────────────────────
+// ── Risoluzione URL singolo ───────────────────────────────────────────────────
 
 /**
- * Scarica l'HTML all'indirizzo linkUrl e lo analizza con regex (senza DOMParser,
- * che in alcuni contesti MV3 service worker non è affidabile).
- * Priorità: blocchi CNL2 crittografati → lista link in textarea → fallback al link originale.
+ * Scarica la pagina all'indirizzo linkUrl e la analizza.
+ * Priorità: blocchi CNL2 → link raggruppati per hoster → URL originale (fallback).
  *
  * @param {string} linkUrl
  */
@@ -71,11 +62,8 @@ async function handleLinkResolve(linkUrl) {
   let html;
   try {
     const res = await fetch(linkUrl, {
-      signal: AbortSignal.timeout(CONTAINER_FETCH_TIMEOUT),
-      headers: {
-        // Header Accept standard: alcuni server servono contenuto diverso senza di esso
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
+      signal:  AbortSignal.timeout(CONTAINER_FETCH_TIMEOUT),
+      headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     html = await res.text();
@@ -85,41 +73,36 @@ async function handleLinkResolve(linkUrl) {
     return;
   }
 
-  // 1. Cerca blocchi CNL2 crittografati (input name="crypted"/"jk")
   const blocks = scanCnlBlocksFromHtml(html);
   if (blocks.length > 0) {
     await openCryptedPopup(blocks);
     return;
   }
 
-  // 2. Cerca lista link in chiaro in una <textarea>
-  const { plainLinks, packageName } = scanPlainLinksFromHtml(html);
-  if (plainLinks.length > 0) {
-    await openConfirmPopup(plainLinks, packageName);
+  const { linkGroups, packageName } = scanPlainLinksFromHtml(html);
+  if (linkGroups.length > 0) {
+    await routeGroupsToPopup(linkGroups, packageName);
     return;
   }
 
-  // 3. Nessun container riconoscibile: invia il link originale
-  console.warn('[JD] Nessun container trovato in', linkUrl, '— invio link originale');
+  // Nessun container riconoscibile: invia il link originale
+  console.warn('[JD] Nessun container in', linkUrl, '— invio link originale');
   await openConfirmPopup([linkUrl]);
 }
 
-// ── Risoluzione multipla (selezione con N URL) ───────────────────────────────
+// ── Risoluzione URL multipli (contesto selezione) ─────────────────────────────
 
 /**
- * Risolve in parallelo tutti gli URL trovati in una selezione di testo.
- * Per ogni URL:
- *   - Se è una pagina container (textarea con link), raccoglie i link reali
- *   - Se è un blocco CNL2, raccoglie il blocco
- *   - Altrimenti mantiene l'URL originale
- *
- * Alla fine apre il popup appropriato con il risultato aggregato.
+ * Risolve in parallelo tutti gli URL e aggrega i risultati per hostname.
+ * I link di ogni hoster vengono cumulati se lo stesso hostname appare in
+ * più pagine container distinte.
  *
  * @param {string[]} urls
  */
 async function handleMultipleLinksResolve(urls) {
-  const allPlainLinks = [];
-  const allBlocks     = [];
+  /** @type {Map<string, string[]>} hostname → links */
+  const hostnameMap = new Map();
+  const allBlocks   = [];
 
   await Promise.all(urls.map(async (url) => {
     let html;
@@ -131,8 +114,8 @@ async function handleMultipleLinksResolve(urls) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       html = await res.text();
     } catch {
-      // Fetch fallito: tieni l'URL originale
-      allPlainLinks.push(url);
+      // Fetch fallito: tratta l'URL originale come link diretto
+      addUrlToMap(hostnameMap, url);
       return;
     }
 
@@ -142,157 +125,61 @@ async function handleMultipleLinksResolve(urls) {
       return;
     }
 
-    const { plainLinks } = scanPlainLinksFromHtml(html);
-    if (plainLinks.length > 0) {
-      allPlainLinks.push(...plainLinks);
+    const { linkGroups } = scanPlainLinksFromHtml(html);
+    if (linkGroups.length > 0) {
+      for (const { hostname, links } of linkGroups) {
+        if (!hostnameMap.has(hostname)) hostnameMap.set(hostname, []);
+        hostnameMap.get(hostname).push(...links);
+      }
       return;
     }
 
-    // Nessun container riconoscibile: tieni l'URL originale
-    allPlainLinks.push(url);
+    // Nessun container: tieni il link originale
+    addUrlToMap(hostnameMap, url);
   }));
 
-  if (allBlocks.length > 0 && allPlainLinks.length === 0) {
+  if (allBlocks.length > 0) {
     await openCryptedPopup(allBlocks);
-  } else if (allBlocks.length > 0) {
-    // Mix di blocchi CNL2 e link plain: invia prima i blocchi poi i link plain separatamente.
-    // Per semplicità apriamo due popup sequenziali (caso raro in pratica).
-    await openCryptedPopup(allBlocks);
+    return;
+  }
+
+  const linkGroups = Array.from(hostnameMap, ([hostname, links]) => ({ hostname, links }));
+  await routeGroupsToPopup(linkGroups, '');
+}
+
+/** @param {Map<string,string[]>} map @param {string} url */
+function addUrlToMap(map, url) {
+  try {
+    const hostname = new URL(url).hostname;
+    if (!map.has(hostname)) map.set(hostname, []);
+    map.get(hostname).push(url);
+  } catch {}
+}
+
+// ── Routing link raggruppati ──────────────────────────────────────────────────
+
+/**
+ * Con un solo hoster usa il popup Fase 1 (lista piatta, nessuna scelta da fare).
+ * Con più hoster apre il popup di selezione per hoster.
+ *
+ * @param {{hostname:string, links:string[]}[]} linkGroups
+ * @param {string} packageName
+ */
+async function routeGroupsToPopup(linkGroups, packageName) {
+  if (linkGroups.length === 0) {
+    await openCryptedPopup([]);
+  } else if (linkGroups.length === 1) {
+    await openConfirmPopup(linkGroups[0].links, packageName);
   } else {
-    await openConfirmPopup(allPlainLinks);
+    await openGroupedPopup(linkGroups, packageName);
   }
 }
 
-// ── Analisi HTML con regex (compatibile con service worker) ───────────────────
-
-/**
- * Cerca blocchi CNL2 (input name="crypted" + name="jk") nell'HTML grezzo.
- * Abbina ogni "crypted" al "jk" più vicino per posizione nel sorgente.
- *
- * @param {string} html
- * @returns {{crypted:string, jk:string, passwords:string}[]}
- */
-function scanCnlBlocksFromHtml(html) {
-  // Raccoglie tutti gli <input ...> con i loro attributi e posizione nel sorgente
-  const inputs = [];
-  const inputRe = /<input\b([^>]*)>/gi;
-  let m;
-  while ((m = inputRe.exec(html)) !== null) {
-    const attrs = m[1];
-    const name  = attrValue(attrs, 'name')?.toLowerCase();
-    const value = attrValue(attrs, 'value') ?? '';
-    if (name) inputs.push({ name, value, pos: m.index });
-  }
-
-  const blocks = [];
-  const cryptedInputs = inputs.filter(i => i.name === 'crypted' && i.value.trim());
-
-  for (const ci of cryptedInputs) {
-    // "jk" più vicino per indice di posizione nel sorgente
-    const jkInput = inputs
-      .filter(i => i.name === 'jk' && i.value.trim())
-      .sort((a, b) => Math.abs(a.pos - ci.pos) - Math.abs(b.pos - ci.pos))[0];
-
-    const pwInput = inputs
-      .filter(i => (i.name === 'passwords' || i.name === 'password') && i.value)
-      .sort((a, b) => Math.abs(a.pos - ci.pos) - Math.abs(b.pos - ci.pos))[0];
-
-    if (jkInput) {
-      blocks.push({
-        crypted:   ci.value,
-        jk:        jkInput.value,
-        passwords: pwInput?.value ?? '',
-      });
-    }
-  }
-
-  return blocks;
-}
-
-/**
- * Cerca la prima <textarea> con almeno 2 URL HTTP/S separati da newline.
- * Decodifica le entità HTML numeriche (es. &#10; → \n) prima di splittare.
- * Legge anche il nome del pacchetto da meta tag vendor-specific (lficrypt).
- *
- * @param {string} html
- * @returns {{plainLinks: string[], packageName: string}}
- */
-function scanPlainLinksFromHtml(html) {
-  const taRe = /<textarea\b[^>]*>([\s\S]*?)<\/textarea>/gi;
-  let m;
-  while ((m = taRe.exec(html)) !== null) {
-    const content = decodeHtmlEntities(m[1]);
-    const lines = content
-      .split(/\r?\n/)
-      .map(l => l.trim())
-      .filter(l => /^https?:\/\//i.test(l));
-
-    if (lines.length >= 2) {
-      return {
-        plainLinks:  lines,
-        packageName: extractMetaContent(html, 'lficrypt-package'),
-      };
-    }
-  }
-
-  return { plainLinks: [], packageName: '' };
-}
-
-// ── Utility regex per HTML grezzo ─────────────────────────────────────────────
-
-/**
- * Estrae il valore di un attributo da una stringa di attributi HTML.
- * Gestisce valori con virgolette doppie o singole.
- *
- * @param {string} attrsStr  - Stringa degli attributi (es. ' name="jk" value="abc"')
- * @param {string} attrName  - Nome attributo da estrarre (case-insensitive)
- * @returns {string|null}
- */
-function attrValue(attrsStr, attrName) {
-  const re = new RegExp(`\\b${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i');
-  const m  = attrsStr.match(re);
-  return m ? (m[1] ?? m[2]) : null;
-}
-
-/**
- * Estrae il valore "content" da un meta tag con il nome specificato.
- * Supporta entrambi gli ordini degli attributi name/content.
- *
- * @param {string} html
- * @param {string} name
- * @returns {string}
- */
-function extractMetaContent(html, name) {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // Ordine 1: name="..." content="..."
-  const re1 = new RegExp(`<meta[^>]+name=["']${escaped}["'][^>]+content=["']([^"']*)["']`, 'i');
-  // Ordine 2: content="..." name="..."
-  const re2 = new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+name=["']${escaped}["']`, 'i');
-  return (html.match(re1) ?? html.match(re2))?.[1] ?? '';
-}
-
-/**
- * Decodifica le entità HTML numeriche e alfabetiche più comuni.
- *
- * @param {string} str
- * @returns {string}
- */
-function decodeHtmlEntities(str) {
-  return str
-    .replace(/&#(\d+);/g,    (_, n) => String.fromCharCode(parseInt(n, 10)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
-    .replace(/&amp;/g,  '&')
-    .replace(/&lt;/g,   '<')
-    .replace(/&gt;/g,   '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'");
-}
-
-// ── Scansione DOM della tab corrente (via content script) ─────────────────────
+// ── Scansione DOM tab corrente (contesto pagina) ──────────────────────────────
 
 /**
  * @param {number} tabId
- * @returns {Promise<{blocks: object[], plainLinks: string[], packageName: string}>}
+ * @returns {Promise<{blocks:object[], plainLinks:string[], packageName:string}>}
  */
 async function scanCurrentPage(tabId) {
   try {
@@ -308,54 +195,161 @@ async function scanCurrentPage(tabId) {
 }
 
 /**
- * Smista il risultato della scansione al popup appropriato.
+ * Smista il risultato della scansione DOM al popup appropriato.
  *
- * @param {object[]}    blocks
- * @param {string[]}    plainLinks
- * @param {string}      packageName
- * @param {string|null} fallbackUrl  - URL da inviare se non trovato nulla (null = errore)
+ * @param {object[]} blocks
+ * @param {string[]} plainLinks
+ * @param {string}   packageName
  */
-async function routeToPopup(blocks, plainLinks, packageName, fallbackUrl) {
+async function routeToPopup(blocks, plainLinks, packageName) {
   if (blocks.length > 0) {
     await openCryptedPopup(blocks);
-  } else if (plainLinks.length > 0) {
-    await openConfirmPopup(plainLinks, packageName);
-  } else if (fallbackUrl) {
-    await openConfirmPopup([fallbackUrl]);
-  } else {
-    await openCryptedPopup([]); // mostra errore nel popup
+    return;
   }
+  if (plainLinks.length > 0) {
+    const linkGroups = groupByHostname(plainLinks);
+    await routeGroupsToPopup(linkGroups, packageName);
+    return;
+  }
+  await openCryptedPopup([]); // nessun contenuto trovato → popup di errore
 }
 
-// ── Popup Fase 1 (link plain) ─────────────────────────────────────────────────
+// ── Analisi HTML con regex ────────────────────────────────────────────────────
 
 /**
- * @param {string[]} links
- * @param {string}   [packageName]
+ * Cerca blocchi CNL2 crittografati (input name="crypted"/"jk") nell'HTML grezzo.
+ *
+ * @param {string} html
+ * @returns {{crypted:string, jk:string, passwords:string}[]}
  */
+function scanCnlBlocksFromHtml(html) {
+  const inputs   = [];
+  const inputRe  = /<input\b([^>]*)>/gi;
+  let m;
+  while ((m = inputRe.exec(html)) !== null) {
+    const attrs = m[1];
+    const name  = attrValue(attrs, 'name')?.toLowerCase();
+    const value = attrValue(attrs, 'value') ?? '';
+    if (name) inputs.push({ name, value, pos: m.index });
+  }
+
+  const blocks = [];
+  for (const ci of inputs.filter(i => i.name === 'crypted' && i.value.trim())) {
+    const nearest = (name) => inputs
+      .filter(i => i.name === name && i.value.trim())
+      .sort((a, b) => Math.abs(a.pos - ci.pos) - Math.abs(b.pos - ci.pos))[0];
+
+    const jkEl = nearest('jk');
+    const pwEl = nearest('passwords') ?? nearest('password');
+
+    if (jkEl) {
+      blocks.push({ crypted: ci.value, jk: jkEl.value, passwords: pwEl?.value ?? '' });
+    }
+  }
+  return blocks;
+}
+
+/**
+ * Cerca la prima <textarea> con ≥2 URL HTTP/S separati da newline
+ * e restituisce i link raggruppati per hostname.
+ *
+ * @param {string} html
+ * @returns {{linkGroups:{hostname:string,links:string[]}[], packageName:string}}
+ */
+function scanPlainLinksFromHtml(html) {
+  const taRe = /<textarea\b[^>]*>([\s\S]*?)<\/textarea>/gi;
+  let m;
+  while ((m = taRe.exec(html)) !== null) {
+    const content = decodeHtmlEntities(m[1]);
+    const lines   = content
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(l => /^https?:\/\//i.test(l));
+
+    if (lines.length >= 2) {
+      return {
+        linkGroups:  groupByHostname(lines),
+        packageName: extractMetaContent(html, 'lficrypt-package'),
+      };
+    }
+  }
+  return { linkGroups: [], packageName: '' };
+}
+
+// ── Raggruppamento per hostname ───────────────────────────────────────────────
+
+/**
+ * Raggruppa un array di URL per hostname, preservando l'ordine di primo incontro.
+ *
+ * @param {string[]} urls
+ * @returns {{hostname:string, links:string[]}[]}
+ */
+function groupByHostname(urls) {
+  const map = new Map();
+  for (const url of urls) {
+    try {
+      const h = new URL(url).hostname;
+      if (!map.has(h)) map.set(h, []);
+      map.get(h).push(url);
+    } catch {}
+  }
+  return Array.from(map, ([hostname, links]) => ({ hostname, links }));
+}
+
+// ── Utility regex per HTML grezzo ─────────────────────────────────────────────
+
+function attrValue(attrsStr, attrName) {
+  const re = new RegExp(`\\b${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i');
+  const m  = attrsStr.match(re);
+  return m ? (m[1] ?? m[2]) : null;
+}
+
+function extractMetaContent(html, name) {
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re1 = new RegExp(`<meta[^>]+name=["']${esc}["'][^>]+content=["']([^"']*)["']`, 'i');
+  const re2 = new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+name=["']${esc}["']`, 'i');
+  return (html.match(re1) ?? html.match(re2))?.[1] ?? '';
+}
+
+function decodeHtmlEntities(str) {
+  return str
+    .replace(/&#(\d+);/g,         (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&amp;/g,  '&')
+    .replace(/&lt;/g,   '<')
+    .replace(/&gt;/g,   '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
+// ── Popup openers ─────────────────────────────────────────────────────────────
+
 async function openConfirmPopup(links, packageName = '') {
   await chrome.storage.session.set({ pendingLinks: links, pendingPackageName: packageName });
   chrome.windows.create({
     url: chrome.runtime.getURL('confirm.html'),
-    type: 'popup',
-    width: POPUP_W,
-    height: POPUP_H,
-    focused: true,
+    type: 'popup', width: POPUP_W, height: POPUP_H, focused: true,
   });
 }
 
-// ── Popup Fase 2 (container crittografati) ────────────────────────────────────
-
-/**
- * @param {{crypted:string, jk:string, passwords:string}[]} blocks
- */
 async function openCryptedPopup(blocks) {
   await chrome.storage.session.set({ pendingCryptedBlocks: blocks });
   chrome.windows.create({
     url: chrome.runtime.getURL('confirm.html'),
-    type: 'popup',
-    width: POPUP_W,
-    height: POPUP_H,
-    focused: true,
+    type: 'popup', width: POPUP_W, height: POPUP_H, focused: true,
+  });
+}
+
+/**
+ * Apre il popup di selezione per hoster.
+ *
+ * @param {{hostname:string, links:string[]}[]} linkGroups
+ * @param {string} packageName
+ */
+async function openGroupedPopup(linkGroups, packageName = '') {
+  await chrome.storage.session.set({ pendingLinkGroups: linkGroups, pendingPackageName: packageName });
+  chrome.windows.create({
+    url: chrome.runtime.getURL('confirm.html'),
+    type: 'popup', width: POPUP_W, height: POPUP_H, focused: true,
   });
 }
