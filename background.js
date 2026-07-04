@@ -305,10 +305,17 @@ function attrValue(attrsStr, attrName) {
 }
 
 function extractMetaContent(html, name) {
-  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re1 = new RegExp(`<meta[^>]+name=["']${esc}["'][^>]+content=["']([^"']*)["']`, 'i');
-  const re2 = new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+name=["']${esc}["']`, 'i');
-  return (html.match(re1) ?? html.match(re2))?.[1] ?? '';
+  // Analizza ogni <meta> tag individualmente per gestire qualsiasi ordine di attributi
+  const tagRe = /<meta\b[^>]*>/gi;
+  const nameRe = new RegExp(`\\bname=["']${name}["']`, 'i');
+  let m;
+  while ((m = tagRe.exec(html)) !== null) {
+    if (nameRe.test(m[0])) {
+      const content = m[0].match(/\bcontent=["']([^"']*)["']/i);
+      if (content) return content[1];
+    }
+  }
+  return '';
 }
 
 function decodeHtmlEntities(str) {
