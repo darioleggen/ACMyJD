@@ -1,0 +1,55 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="globeGrad" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#2E8B7A"/>
+      <stop offset="55%" stop-color="#145C6E"/>
+      <stop offset="100%" stop-color="#062B3A"/>
+    </radialGradient>
+    <linearGradient id="arrowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFE27A"/>
+      <stop offset="55%" stop-color="#F7B733"/>
+      <stop offset="100%" stop-color="#E08A1E"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <clipPath id="globeClip">
+      <circle cx="128" cy="120" r="82"/>
+    </clipPath>
+  </defs>
+
+  <!-- sfondo -->
+  <rect x="4" y="4" width="248" height="248" rx="54" fill="#0B1E2A"/>
+
+  <!-- globo -->
+  <g filter="url(#soft)">
+    <circle cx="128" cy="120" r="82" fill="url(#globeGrad)"/>
+  </g>
+
+  <!-- macchie continenti stilizzate, forme originali diverse dal logo di riferimento -->
+  <g clip-path="url(#globeClip)" fill="#6FCB6A" opacity="0.85">
+    <ellipse cx="98" cy="88" rx="26" ry="16" transform="rotate(-15 98 88)"/>
+    <ellipse cx="140" cy="70" rx="14" ry="9" transform="rotate(10 140 70)"/>
+    <ellipse cx="110" cy="150" rx="20" ry="12" transform="rotate(20 110 150)"/>
+    <ellipse cx="165" cy="130" rx="16" ry="22" transform="rotate(-10 165 130)"/>
+    <ellipse cx="80" cy="140" rx="10" ry="14"/>
+  </g>
+
+  <!-- linee di longitudine per dare volume -->
+  <g clip-path="url(#globeClip)" fill="none" stroke="#0B3B4A" stroke-width="2" opacity="0.5">
+    <ellipse cx="128" cy="120" rx="30" ry="82"/>
+    <ellipse cx="128" cy="120" rx="55" ry="82"/>
+    <line x1="46" y1="120" x2="210" y2="120"/>
+  </g>
+
+  <!-- riflesso -->
+  <ellipse cx="105" cy="90" rx="30" ry="18" fill="#FFFFFF" opacity="0.18"/>
+
+  <!-- freccia di download che avvolge il globo orizzontalmente, contenuta entro i bordi del globo -->
+  <g filter="url(#soft)">
+    <path d="M 202 100
+             A 78 78 0 1 1 54 100"
+          fill="none" stroke="url(#arrowGrad)" stroke-width="22" stroke-linecap="round"/>
+    <polygon points="54,100 60,68 86,92" fill="url(#arrowGrad)"/>
+  </g>
+</svg>
