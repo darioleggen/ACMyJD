@@ -3,7 +3,13 @@
  * Unica voce di menu "Invia a JDownloader" per tutti i contesti:
  *   - LINK      → fetch silenzioso della pagina; se è un container estrae i link reali
  *   - SELECTION → risolve ogni URL nel testo selezionato con la stessa logica
- *   - PAGE      → scansiona il DOM della tab corrente via content script
+ *   - PAGE      → inietta on-demand (activeTab + scripting) content-cnl-scanner.js
+ *                 nella tab corrente e ne scansiona il DOM
+ *
+ * Il content script per il contesto PAGE non è più registrato in modo permanente
+ * su tutte le pagine (niente "content_scripts" nel manifest): viene iniettato solo
+ * quando l'utente clicca la voce di menu, sfruttando il permesso "activeTab"
+ * concesso dal gesture dell'utente sul contesto contestuale stesso.
  *
  * I link estratti vengono raggruppati per hostname: se ci sono più hoster il
  * popup mostra una checkbox per hoster così l'utente può scegliere quali inviare.
@@ -180,11 +186,18 @@ async function routeGroupsToPopup(linkGroups, packageName) {
 // ── Scansione DOM tab corrente (contesto pagina) ──────────────────────────────
 
 /**
+ * Inietta content-cnl-scanner.js nella tab corrente (on-demand, via activeTab)
+ * e ne richiede la scansione del DOM.
+ *
  * @param {number} tabId
  * @returns {Promise<{blocks:object[], plainLinks:string[], packageName:string}>}
  */
 async function scanCurrentPage(tabId) {
   try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files:  ['content-cnl-scanner.js'],
+    });
     const response = await chrome.tabs.sendMessage(tabId, { action: 'scanCnlBlocks' });
     return {
       blocks:      response?.blocks      ?? [],

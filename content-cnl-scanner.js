@@ -1,5 +1,7 @@
 /**
- * Content script iniettato in tutte le pagine web (run_at: document_idle).
+ * Content script iniettato on-demand nella tab attiva (chrome.scripting.executeScript,
+ * permesso "activeTab") solo quando l'utente clicca la voce di menu sul contesto
+ * "page" — non è più registrato in modo permanente su tutte le pagine.
  * Risponde al messaggio 'scanCnlBlocks' con tre campi:
  *   - blocks      {crypted,jk,passwords}[]  blocchi CNL2 crittografati
  *   - plainLinks  string[]                  URL plain trovati in <textarea>
