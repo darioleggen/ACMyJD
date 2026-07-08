@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "JD Link Sender",
+  "version": "1.1",
+  "description": "Invia link e container crittografati a JDownloader 2 via ClickNLoad2 (CNL2) — sostituto minimale di MyJDownloader",
+  "background": {
+    "scripts": ["background.js"],
+    "type": "module"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "permissions": [
+    "contextMenus",
+    "notifications",
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "jd-link-sender@darioleggen.github.io",
+      "strict_min_version": "115.0"
+    }
+  }
+}

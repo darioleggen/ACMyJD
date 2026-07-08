@@ -1,9 +1,9 @@
 # JD Link Sender
 
-Estensione Chrome/Brave (Manifest V3) che invia link e container crittografati a **JDownloader 2**
-tramite la sua interfaccia HTTP **ClickNLoad2 (CNL2)**. È un sostituto minimale di MyJDownloader:
-niente account cloud, niente servizi di terze parti — l'estensione parla direttamente con
-l'endpoint `/flash/*` della tua istanza JDownloader (locale o esposta via tunnel).
+Estensione Chrome/Brave/Firefox (Manifest V3) che invia link e container crittografati a
+**JDownloader 2** tramite la sua interfaccia HTTP **ClickNLoad2 (CNL2)**. È un sostituto minimale di
+MyJDownloader: niente account cloud, niente servizi di terze parti — l'estensione parla direttamente
+con l'endpoint `/flash/*` della tua istanza JDownloader (locale o esposta via tunnel).
 
 ## Funzionalità
 
@@ -27,15 +27,29 @@ l'endpoint `/flash/*` della tua istanza JDownloader (locale o esposta via tunnel
   ClickNLoad, porta di default `9666`), raggiungibile dal browser:
   - in rete locale (es. `http://192.168.1.15:9666`), oppure
   - da remoto tramite un tunnel/reverse proxy (es. Cloudflare Tunnel) su un dominio proprio.
-- Chrome o Brave (o altro browser basato su Chromium) con supporto Manifest V3.
+- Chrome, Brave (o altro browser basato su Chromium), oppure Firefox 115+.
 
 ## Installazione
 
-Non esiste build né store: si carica come estensione "unpacked".
+Non esiste un bundler, ma i due browser richiedono manifest leggermente diversi (vedi
+[Sviluppo](#sviluppo)), quindi si carica da una cartella "pacchettizzata" con lo script di build.
 
+```powershell
+pwsh ./scripts/package.ps1
+```
+
+Questo crea `dist/chrome/` e `dist/firefox/` (più i rispettivi `.zip`).
+
+**Chrome/Brave:**
 1. Apri `chrome://extensions`.
 2. Attiva la **Modalità sviluppatore** (in alto a destra).
-3. Clicca **Carica estensione non pacchettizzata** e seleziona la cartella del progetto.
+3. Clicca **Carica estensione non pacchettizzata** e seleziona `dist/chrome`.
+
+**Firefox:**
+1. Apri `about:debugging#/runtime/this-firefox`.
+2. Clicca **Carica componente aggiuntivo temporaneo** e seleziona `dist/firefox/manifest.json`.
+3. Firefox rimuove i componenti temporanei al riavvio del browser: va ricaricato ad ogni sessione
+   (per un'installazione persistente serve pubblicarla, vedi [Pubblicazione](#pubblicazione)).
 
 ## Configurazione
 
@@ -58,12 +72,30 @@ Non esiste build né store: si carica come estensione "unpacked".
 ## Sviluppo
 
 Nessun bundler, nessun `package.json`: moduli ES nativi caricati direttamente dalla piattaforma
-Chrome extension. Dopo modifiche a `background.js`, `config.js` o `jdApi.js` occorre ricaricare
-l'estensione da `chrome://extensions` (i service worker non fanno hot-reload). Dopo modifiche a
+dell'estensione. Dopo modifiche a `background.js`, `config.js` o `jdApi.js` occorre ricaricare
+l'estensione (su Chrome dal pulsante reload in `chrome://extensions`, i service worker non fanno
+hot-reload; su Firefox rimuovendo e ricaricando il componente temporaneo). Dopo modifiche a
 `content-cnl-scanner.js` occorre anche ricaricare le tab già aperte.
 
 Non ci sono test automatici: la verifica va fatta manualmente esercitando i tre contesti del
-menu contestuale (link, selezione, pagina) e la pagina Opzioni.
+menu contestuale (link, selezione, pagina) e la pagina Opzioni — su entrambi i browser prima di
+una release.
+
+Il codice (JS/HTML/icone) è identico per i due browser: cambia solo il manifest, perché Firefox
+usa uno *script* di background non persistente (`background.scripts`) invece del *service worker*
+di Chrome, e richiede un ID esplicito per l'estensione:
+
+| | `manifest.json` (Chrome) | `manifest.firefox.json` (Firefox) |
+|---|---|---|
+| Background | `service_worker` | `scripts` (array) + `type: module` |
+| ID estensione | non richiesto | `browser_specific_settings.gecko.id` |
+| Versione minima | — | Firefox 115+ (richiesto da `storage.session`) |
+
+Quando si rilascia una nuova versione, aggiornare `version` in **entrambi** i file manifest —
+nulla lo fa automaticamente.
+
+`scripts/package.ps1` genera `dist/chrome/` e `dist/firefox/` copiando i file condivisi e il
+manifest giusto in ciascuna, poi produce gli zip pronti per l'upload sugli store.
 
 ## Struttura del progetto
 
@@ -84,3 +116,39 @@ menu contestuale (link, selezione, pagina) e la pagina Opzioni.
 - `storage` — per salvare la configurazione e lo stato temporaneo tra background e popup
 - `<all_urls>` (host permissions) — per poter recuperare e scansionare qualsiasi pagina/link
   scelto dall'utente
+
+## Pubblicazione
+
+Build via `pwsh ./scripts/package.ps1`, poi carica `dist/jd-link-sender-chrome-vX.Y.zip` e
+`dist/jd-link-sender-firefox-vX.Y.zip` sui rispettivi store.
+
+**Chrome Web Store** (una tantum $5 di registrazione developer):
+1. https://chromewebstore.google.com/devconsole → "Nuovo elemento".
+2. Carica lo zip `chrome`, compila scheda (descrizione, screenshot, categoria, privacy policy se
+   richiesta per via di `<all_urls>`/`notifications`).
+3. Invia per revisione. Le estensioni con `host_permissions: <all_urls>` a volte richiedono una
+   giustificazione d'uso nel form — spiega che serve a leggere la pagina/il link scelto dall'utente
+   per riconoscere i container CNL2, non per raccogliere dati.
+4. Dopo approvazione, ogni nuova versione richiede un nuovo upload dello zip con `version`
+   incrementata in `manifest.json` + repackaging.
+
+**Firefox Add-ons (AMO)**:
+1. https://addons.mozilla.org/developers/ (serve un account Firefox, gratuito).
+2. "Invia un nuovo componente aggiuntivo" → carica lo zip `firefox`.
+3. Scegli "listato" (pubblico su AMO, revisionato da Mozilla) oppure "self-distributed" (solo firma,
+   distribuzione fuori da AMO) a seconda di dove vuoi che gli utenti la installino.
+4. Mozilla firma automaticamente lo zip dopo la validazione; per il listato c'è revisione manuale
+   (di solito giorni, non ore).
+5. Ricontrolla `browser_specific_settings.gecko.id` in `manifest.firefox.json` prima del primo
+   invio: `jd-link-sender@darioleggen.github.io` è solo un placeholder nel formato richiesto
+   (stringa tipo email, non deve risolvere a nulla) — puoi tenerlo o cambiarlo, ma una volta
+   pubblicato non va più modificato (è la chiave con cui AMO riconosce gli aggiornamenti).
+
+**Repository GitHub** (`darioleggen/ACMyJD`, già collegato come `origin`):
+1. Committa le modifiche e taggale in modo che corrispondano alla versione degli store, es.
+   `git tag v1.1 && git push origin v1.1`.
+2. Crea una Release su GitHub (`gh release create v1.1 dist/jd-link-sender-chrome-v1.1.zip
+   dist/jd-link-sender-firefox-v1.1.zip --notes "..."`) così gli zip restano scaricabili anche per
+   chi non passa dagli store (utile per install "unpacked"/temporanee).
+3. Da qui in poi ogni release futura ripete: bump versione in entrambi i manifest → package →
+   upload store → tag + release GitHub.
