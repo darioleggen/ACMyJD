@@ -85,10 +85,15 @@ function renderLinkList() {
   const n = pendingLinks.length;
   elSubtitle.textContent = `${n} link ${n === 1 ? 'trovato' : 'trovati'}:`;
 
-  const items = pendingLinks
-    .map(url => `<div class="link-item">${escapeHtml(url)}</div>`)
-    .join('');
-  elLinkContainer.innerHTML = `<div class="link-list">${items}</div>`;
+  const list = document.createElement('div');
+  list.className = 'link-list';
+  for (const url of pendingLinks) {
+    const item = document.createElement('div');
+    item.className = 'link-item';
+    item.textContent = url;
+    list.append(item);
+  }
+  elLinkContainer.replaceChildren(list);
 }
 
 // ── Rendering — Fase 2 container crittografati ────────────────────────────────
@@ -120,13 +125,25 @@ function renderCryptedList() {
   const n = pendingCryptedBlocks.length;
   elSubtitle.textContent = `${n} container trovati — seleziona quali inviare:`;
 
-  const items = pendingCryptedBlocks.map((_, i) =>
-    `<label class="crypted-item">
-       <input type="checkbox" class="crypted-check" data-index="${i}" checked>
-       <span>Opzione ${i + 1}</span>
-     </label>`
-  ).join('');
-  elLinkContainer.innerHTML = `<div class="crypted-list">${items}</div>`;
+  const list = document.createElement('div');
+  list.className = 'crypted-list';
+  pendingCryptedBlocks.forEach((_, i) => {
+    const label = document.createElement('label');
+    label.className = 'crypted-item';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'crypted-check';
+    checkbox.dataset.index = String(i);
+    checkbox.checked = true;
+
+    const span = document.createElement('span');
+    span.textContent = `Opzione ${i + 1}`;
+
+    label.append(checkbox, span);
+    list.append(label);
+  });
+  elLinkContainer.replaceChildren(list);
 
   elLinkContainer.addEventListener('change', () => {
     elBtnSend.disabled = !elLinkContainer.querySelector('.crypted-check:checked');
@@ -152,14 +169,29 @@ function renderGroupedList() {
   elSubtitle.textContent =
     `${n} hoster disponibili (${totalLinks} link totali) — seleziona quali inviare:`;
 
-  const items = pendingLinkGroups.map((group, i) =>
-    `<label class="crypted-item">
-       <input type="checkbox" class="group-check" data-index="${i}" checked>
-       <span>${escapeHtml(group.hostname)}</span>
-       <span class="group-count">${group.links.length} link</span>
-     </label>`
-  ).join('');
-  elLinkContainer.innerHTML = `<div class="crypted-list">${items}</div>`;
+  const list = document.createElement('div');
+  list.className = 'crypted-list';
+  pendingLinkGroups.forEach((group, i) => {
+    const label = document.createElement('label');
+    label.className = 'crypted-item';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'group-check';
+    checkbox.dataset.index = String(i);
+    checkbox.checked = true;
+
+    const hostSpan = document.createElement('span');
+    hostSpan.textContent = group.hostname;
+
+    const countSpan = document.createElement('span');
+    countSpan.className = 'group-count';
+    countSpan.textContent = `${group.links.length} link`;
+
+    label.append(checkbox, hostSpan, countSpan);
+    list.append(label);
+  });
+  elLinkContainer.replaceChildren(list);
 
   elLinkContainer.addEventListener('change', () => {
     elBtnSend.disabled = !elLinkContainer.querySelector('.group-check:checked');
@@ -300,12 +332,3 @@ function friendlyError(err) {
   return err.message ?? 'Errore sconosciuto.';
 }
 
-// ── Helper: escape HTML ──────────────────────────────────────────────────────
-
-function escapeHtml(str) {
-  return str
-    .replace(/&/g,  '&amp;')
-    .replace(/</g,  '&lt;')
-    .replace(/>/g,  '&gt;')
-    .replace(/"/g,  '&quot;');
-}
