@@ -38,7 +38,7 @@ function readForm() {
   try {
     parsed = new URL(raw);
   } catch {
-    showStatus('URL non valido. Esempio: http://192.168.1.15:9666', false);
+    showStatus('URL non valido. Esempio: http://192.168.1.100:9666', false);
     return null;
   }
 

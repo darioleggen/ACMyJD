@@ -2,11 +2,11 @@
  * Configurazione dell'istanza JDownloader.
  * L'URL base è salvato in chrome.storage.sync (modificabile dalla pagina Opzioni)
  * con fallback al default qui sotto. Supporta sia indirizzi locali
- * (http://192.168.1.15:9666) sia remoti via tunnel (https://jd-cnl.example.xyz).
+ * (http://192.168.1.100:9666) sia remoti via tunnel (https://jd-cnl.example.xyz).
  */
 
 /** URL base predefinito usato al primo avvio o se lo storage è vuoto */
-export const DEFAULT_BASE_URL = 'http://192.168.1.15:9666';
+export const DEFAULT_BASE_URL = 'http://192.168.1.100:9666';
 
 /** Timeout massimo per le richieste HTTP verso JDownloader (ms) */
 export const REQUEST_TIMEOUT_MS = 10_000;

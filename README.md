@@ -25,7 +25,7 @@ con l'endpoint `/flash/*` della tua istanza JDownloader (locale o esposta via tu
 
 - **JDownloader 2** con l'interfaccia **ClickNLoad2** attiva (Impostazioni → Trasferimento →
   ClickNLoad, porta di default `9666`), raggiungibile dal browser:
-  - in rete locale (es. `http://192.168.1.15:9666`), oppure
+  - in rete locale (es. `http://192.168.1.100:9666`), oppure
   - da remoto tramite un tunnel/reverse proxy (es. Cloudflare Tunnel) su un dominio proprio.
 - Chrome, Brave (o altro browser basato su Chromium), oppure Firefox 115+.
 
@@ -55,7 +55,7 @@ Questo crea `dist/chrome/` e `dist/firefox/` (più i rispettivi `.zip`).
 
 1. Apri la pagina **Opzioni** dell'estensione (dai dettagli dell'estensione o dal menu
    dell'icona).
-2. Inserisci l'URL base della tua istanza JDownloader, es. `http://192.168.1.15:9666` oppure
+2. Inserisci l'URL base della tua istanza JDownloader, es. `http://192.168.1.100:9666` oppure
    `https://jd-cnl.miodominio.xyz`.
 3. Premi **Prova connessione** per verificare che l'endpoint `/jdcheck.js` risponda.
 4. Salva.
