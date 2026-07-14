@@ -49,7 +49,7 @@ Questo crea `dist/chrome/` e `dist/firefox/` (più i rispettivi `.zip`).
 1. Apri `about:debugging#/runtime/this-firefox`.
 2. Clicca **Carica componente aggiuntivo temporaneo** e seleziona `dist/firefox/manifest.json`.
 3. Firefox rimuove i componenti temporanei al riavvio del browser: va ricaricato ad ogni sessione
-   (per un'installazione persistente serve pubblicarla, vedi [Pubblicazione](#pubblicazione)).
+   (per un'installazione persistente serve pubblicarla sugli store).
 
 ## Configurazione
 
@@ -116,39 +116,3 @@ manifest giusto in ciascuna, poi produce gli zip pronti per l'upload sugli store
 - `storage` — per salvare la configurazione e lo stato temporaneo tra background e popup
 - `<all_urls>` (host permissions) — per poter recuperare e scansionare qualsiasi pagina/link
   scelto dall'utente
-
-## Pubblicazione
-
-Build via `pwsh ./scripts/package.ps1`, poi carica `dist/jd-link-sender-chrome-vX.Y.zip` e
-`dist/jd-link-sender-firefox-vX.Y.zip` sui rispettivi store.
-
-**Chrome Web Store** (una tantum $5 di registrazione developer):
-1. https://chromewebstore.google.com/devconsole → "Nuovo elemento".
-2. Carica lo zip `chrome`, compila scheda (descrizione, screenshot, categoria, privacy policy se
-   richiesta per via di `<all_urls>`/`notifications`).
-3. Invia per revisione. Le estensioni con `host_permissions: <all_urls>` a volte richiedono una
-   giustificazione d'uso nel form — spiega che serve a leggere la pagina/il link scelto dall'utente
-   per riconoscere i container CNL2, non per raccogliere dati.
-4. Dopo approvazione, ogni nuova versione richiede un nuovo upload dello zip con `version`
-   incrementata in `manifest.json` + repackaging.
-
-**Firefox Add-ons (AMO)**:
-1. https://addons.mozilla.org/developers/ (serve un account Firefox, gratuito).
-2. "Invia un nuovo componente aggiuntivo" → carica lo zip `firefox`.
-3. Scegli "listato" (pubblico su AMO, revisionato da Mozilla) oppure "self-distributed" (solo firma,
-   distribuzione fuori da AMO) a seconda di dove vuoi che gli utenti la installino.
-4. Mozilla firma automaticamente lo zip dopo la validazione; per il listato c'è revisione manuale
-   (di solito giorni, non ore).
-5. Ricontrolla `browser_specific_settings.gecko.id` in `manifest.firefox.json` prima del primo
-   invio: `jd-link-sender@darioleggen.github.io` è solo un placeholder nel formato richiesto
-   (stringa tipo email, non deve risolvere a nulla) — puoi tenerlo o cambiarlo, ma una volta
-   pubblicato non va più modificato (è la chiave con cui AMO riconosce gli aggiornamenti).
-
-**Repository GitHub** (`darioleggen/ACMyJD`, già collegato come `origin`):
-1. Committa le modifiche e taggale in modo che corrispondano alla versione degli store, es.
-   `git tag v1.1 && git push origin v1.1`.
-2. Crea una Release su GitHub (`gh release create v1.1 dist/jd-link-sender-chrome-v1.1.zip
-   dist/jd-link-sender-firefox-v1.1.zip --notes "..."`) così gli zip restano scaricabili anche per
-   chi non passa dagli store (utile per install "unpacked"/temporanee).
-3. Da qui in poi ogni release futura ripete: bump versione in entrambi i manifest → package →
-   upload store → tag + release GitHub.
