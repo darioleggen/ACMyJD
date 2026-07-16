@@ -112,7 +112,6 @@ manifest giusto in ciascuna, poi produce gli zip pronti per l'upload sugli store
 ## Permessi richiesti
 
 - `contextMenus` — per la voce di menu "Invia a JDownloader"
-- `notifications` — per notificare l'esito dell'invio
 - `storage` — per salvare la configurazione e lo stato temporaneo tra background e popup
 - `<all_urls>` (host permissions) — per poter recuperare e scansionare qualsiasi pagina/link
   scelto dall'utente

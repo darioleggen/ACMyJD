@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JD Link Sender",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Invia link e container crittografati a JDownloader 2 via ClickNLoad2 (CNL2) — sostituto minimale di MyJDownloader",
   "background": {
     "service_worker": "background.js",
@@ -23,7 +23,6 @@
   },
   "permissions": [
     "contextMenus",
-    "notifications",
     "storage",
     "scripting",
     "activeTab"
